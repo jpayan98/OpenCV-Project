@@ -86,19 +86,16 @@ public class Main {
 */
 
     public static void capturarCaras() {
-        // Cargar el clasificador Haar Cascade para detección de caras
+        // Cargar el clasificador Haar Cascade para detección de cuerpos
         //https://github.com/opencv/opencv/tree/master/data/haarcascades
-        //CascadeClassifier faceDetector = new CascadeClassifier("modelos/haarcascade_frontalface_default.xml");
-        CascadeClassifier faceDetector = new CascadeClassifier("modelos/haarcascade_frontalface_default.xml");
-        CascadeClassifier eyeDetector = new CascadeClassifier("modelos/haarcascade_eye.xml");
+        CascadeClassifier bodyDetector = new CascadeClassifier("modelos/haarcascade_fullbody.xml");
 
-        if (faceDetector.empty()) {
-            System.out.println("No se pudo cargar el clasificador de caras.");
+
+        if (bodyDetector.empty()) {
+            System.out.println("No se pudo cargar el clasificador de cuerpos.");
             return;
         }
-        if (eyeDetector.empty()){
-            System.out.println("No se pudo cargar el clasificador de ojos.");
-        }
+
 
         VideoCapture camera = new VideoCapture(0); // 0 para la webcam predeterminada
         if (!camera.isOpened()) {
@@ -116,33 +113,19 @@ public class Main {
             Mat gray = new Mat();
             Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
 
-            // Detectar caras
-            MatOfRect faces = new MatOfRect();
-            MatOfRect eyes = new MatOfRect();
-            faceDetector.detectMultiScale(gray, faces, 1.1, 5, 0, new Size(40, 40), new Size());
-            eyeDetector.detectMultiScale(gray, eyes, 1.1, 5, 0, new Size(40, 40), new Size());
+            // Detectar cuerpos
+            MatOfRect bodys = new MatOfRect();
+            bodyDetector.detectMultiScale(gray, bodys, 1.1, 5, 0, new Size(40, 40), new Size());
 
 
-            // Dibujar rectángulos alrededor de las caras detectadas
-            for (Rect face : faces.toArray()) {
-                Imgproc.rectangle(frame, face, new Scalar(255, 0, 0), 2);
-            }
-
-            for (Rect eye : eyes.toArray()) {
-                // Centro del rectángulo detectado
-                int centerX = eye.x + eye.width / 2;
-                int centerY = eye.y + eye.height / 2;
-
-                // Radio aproximado del ojo
-                int radius = Math.min(eye.width, eye.height) / 2;
-
-                // Dibujar el círculo
-                Imgproc.circle(frame, new org.opencv.core.Point(centerX, centerY), radius, new Scalar(0, 255, 0), 2);
+            // Dibujar rectángulos alrededor de las cuerpos detectadas
+            for (Rect body : bodys.toArray()) {
+                Imgproc.rectangle(frame, body, new Scalar(255, 0, 0), 2);
             }
 
 
             // Mostrar el resultado
-            HighGui.imshow("Detección de caras en webcam", frame);
+            HighGui.imshow("Detección de cuerpos en webcam", frame);
 
             // Salir con la tecla 'ESC'
             if (HighGui.waitKey(1) == 27) {
