@@ -108,110 +108,57 @@ public class Main {
 
         Mat frame = new Mat();
         while (true) {
-            // Variables para suavizado temporal del rectángulo
-            int smoothX = 0, smoothY = 0, smoothW = 0, smoothH = 0;
-            boolean initialized = false;
-
-            while (true) {
-
-                if (!camera.read(frame) || frame.empty()) {
-                    break;
-                }
-
-                // Convertir a escala gris
-                Mat gray = new Mat();
-                Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
-
-                // Detectar caras
-                MatOfRect faces = new MatOfRect();
-                faceDetector.detectMultiScale(gray, faces, 1.1, 5, 0, new Size(40,40), new Size());
-
-                Rect[] detectedFaces = faces.toArray();
-
-                if (detectedFaces.length > 0) {
-
-                    // ======== 1. SUAVIZADO TEMPORAL DEL RECTÁNGULO ========
-                    Rect face = detectedFaces[0];  // usamos la primera cara detectada
-
-                    if (!initialized) {
-                        smoothX = face.x;
-                        smoothY = face.y;
-                        smoothW = face.width;
-                        smoothH = face.height;
-                        initialized = true;
-                    }
-
-                    // Filtro exponencial (suaviza el movimiento del rectángulo)
-                    double alpha = 0.15;   // cuanto menor, más suave
-                    smoothX = (int)(alpha * face.x + (1 - alpha) * smoothX);
-                    smoothY = (int)(alpha * face.y + (1 - alpha) * smoothY);
-                    smoothW = (int)(alpha * face.width + (1 - alpha) * smoothW);
-                    smoothH = (int)(alpha * face.height + (1 - alpha) * smoothH);
-
-                    Rect smoothFace = new Rect(smoothX, smoothY, smoothW, smoothH);
-
-                    // ======== 2. RECORTE DEL ROSTRO ========
-                    Mat faceROI = new Mat(gray, smoothFace);
-
-                    // ======== 3. SUAVIZADO ESPACIAL ========
-                    Imgproc.GaussianBlur(faceROI, faceROI, new Size(7, 7), 0);
-
-                    // ======== 4. CANNY ESTABLE ========
-                    Mat edges = new Mat();
-                    Imgproc.Canny(faceROI, edges, 90, 160);
-
-                    // ======== 5. CONTORNOS FILTRADOS ========
-                    List<MatOfPoint> contours = new ArrayList<>();
-                    Mat hierarchy = new Mat();
-                    Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-
-                    for (MatOfPoint c : contours) {
-
-                        // Filtrar contornos pequeños → elimina ruido
-                        double area = Imgproc.contourArea(c);
-                        if (area < 60) continue; // Ajustable
-
-                        // Convertir puntos a coordenadas reales de la imagen
-                        List<org.opencv.core.Point> shifted = new ArrayList<>();
-                        for (org.opencv.core.Point p : c.toArray()) {
-                            shifted.add(new org.opencv.core.Point(p.x + smoothFace.x, p.y + smoothFace.y));
-                        }
-
-                        MatOfPoint shiftedContour = new MatOfPoint();
-                        shiftedContour.fromList(shifted);
-
-                        // Dibujar contorno suavizado
-                        Imgproc.drawContours(frame, List.of(shiftedContour), -1, new Scalar(255, 0, 0), 2);
-                    }
-                }
-
-                // ======== OJOS EN CUADRADOS ========
-                MatOfRect eyes = new MatOfRect();
-                eyeDetector.detectMultiScale(gray, eyes, 1.6, 5, 0, new Size(20,20), new Size());
-
-                for (Rect eye : eyes.toArray()) {
-                    Imgproc.rectangle(frame, eye, new Scalar(0, 255, 0), 2);
-                }
-
-                // Mostrar resultado
-                HighGui.imshow("Detección estable", frame);
-
-                if (HighGui.waitKey(1) == 27){
-                    break;
-                }
+            if (!camera.read(frame) || frame.empty()) {
+                break;
             }
-            System.out.println("Liberando la cámara...");
-            camera.release();
-            frame.release(); // Liberar el Mat del frame también
 
-            System.out.println("Destruyendo ventanas de HighGui...");
-            HighGui.destroyAllWindows(); // Cierra todas las ventanas abiertas por HighGui
+            // Convertir a escala de grises
+            Mat gray = new Mat();
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
 
-            System.out.println("Programa finalizado.");
-            System.exit(0); // Asegura que la aplicación termine completamente si hay hilos de HighGui
+            // Detectar caras
+            MatOfRect faces = new MatOfRect();
+            MatOfRect eyes = new MatOfRect();
+            faceDetector.detectMultiScale(gray, faces, 1.1, 5, 0, new Size(40, 40), new Size());
+            eyeDetector.detectMultiScale(gray, eyes, 1.1, 5, 0, new Size(40, 40), new Size());
 
+
+            // Dibujar rectángulos alrededor de las caras detectadas
+            for (Rect face : faces.toArray()) {
+                Imgproc.rectangle(frame, face, new Scalar(255, 0, 0), 2);
+            }
+
+            for (Rect eye : eyes.toArray()) {
+                // Centro del rectángulo detectado
+                int centerX = eye.x + eye.width / 2;
+                int centerY = eye.y + eye.height / 2;
+
+                // Radio aproximado del ojo
+                int radius = Math.min(eye.width, eye.height) / 2;
+
+                // Dibujar el círculo
+                Imgproc.circle(frame, new org.opencv.core.Point(centerX, centerY), radius, new Scalar(0, 255, 0), 2);
+            }
+
+
+            // Mostrar el resultado
+            HighGui.imshow("Detección de caras en webcam", frame);
+
+            // Salir con la tecla 'ESC'
+            if (HighGui.waitKey(1) == 27) {
+                break; // Salir con ESC
+            }
         }
 
         // Liberar la cámara y destruir las ventanas de HighGui
-           }
+        System.out.println("Liberando la cámara...");
+        camera.release();
+        frame.release(); // Liberar el Mat del frame también
+
+        System.out.println("Destruyendo ventanas de HighGui...");
+        HighGui.destroyAllWindows(); // Cierra todas las ventanas abiertas por HighGui
+
+        System.out.println("Programa finalizado.");
+        System.exit(0); // Asegura que la aplicación termine completamente si hay hilos de HighGui
+    }
 }
