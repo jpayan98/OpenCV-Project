@@ -258,7 +258,7 @@ public class Main {
                 }
             }
 
-            HighGui.imshow("Movimiento + Cuerpos", frameActual);
+            HighGui.imshow("Detector de intrusos", frameActual);
 
             long ahora = System.currentTimeMillis();
             if (alarmaReproducida && (ahora - ultimoMovimiento > 5000)) {
