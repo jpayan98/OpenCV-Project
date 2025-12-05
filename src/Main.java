@@ -2,20 +2,41 @@
  * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
  * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
  */
-import java.util.ArrayList;
-import java.util.List;
 
 import org.opencv.core.*;
 import org.opencv.highgui.HighGui;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.videoio.VideoCapture;
+import java.util.ArrayList;
+import java.util.List;
+import javafx.embed.swing.JFXPanel;
+import javafx.scene.media.Media;
+import javafx.scene.media.MediaPlayer;
+import java.io.File;
 
-/**
- *
- * @author JAVI
- */
+
 public class Main {
+    private static boolean alarmaReproducida = false;
+    private static long ultimoMovimiento = 0;
+
+    public static void playAlertSound() {
+        if (alarmaReproducida) {
+            return; // Ya sonó, no volver a reproducir
+        }
+
+        try {
+            String path = "sounds/alert_sound.mp3";
+            Media sound = new Media(new File(path).toURI().toString());
+            MediaPlayer mediaPlayer = new MediaPlayer(sound);
+            mediaPlayer.play();
+
+            alarmaReproducida = true; // <-- marcar como reproducida
+
+        } catch (Exception e) {
+            System.out.println("Error al reproducir sonido: " + e.getMessage());
+        }
+    }
 
     // Cargar la librería nativa de OpenCV al inicio
     static {
@@ -29,6 +50,7 @@ public class Main {
     }
 
     public static void main(String[] args) {
+        new JFXPanel();
         System.out.println("Empezamos a capturar");
         //capturarContornos();
         //capturarCuerpos();
@@ -214,6 +236,11 @@ public class Main {
                 // 5️⃣ SI HAY CUERPOS → Mostrar el rectángulo DE MOVIMIENTO
                 if (cuerpos.toArray().length > 0) {
 
+                    ultimoMovimiento = System.currentTimeMillis();
+
+                    if (!alarmaReproducida) {
+                        playAlertSound();
+                    }
                     // Dibujar rectángulo EN FRAME ORIGINAL
                     Imgproc.rectangle(frameActual,
                             movimientoRect,
@@ -232,6 +259,12 @@ public class Main {
             }
 
             HighGui.imshow("Movimiento + Cuerpos", frameActual);
+
+            long ahora = System.currentTimeMillis();
+            if (alarmaReproducida && (ahora - ultimoMovimiento > 5000)) {
+                alarmaReproducida = false;
+                System.out.println("⚠ Alarma reseteada tras 5 segundos sin movimiento.");
+            }
 
             // Actualizar frame previo
             gray.copyTo(framePrevio);
