@@ -1,5 +1,6 @@
 import org.opencv.core.*;
 import org.opencv.core.Point;
+import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.videoio.VideoCapture;
@@ -33,6 +34,7 @@ public class InterfazAplicacion extends JFrame {
     private volatile boolean sistemaActivo = false;
     private boolean alarmaReproducida = false;
     private long ultimoMovimiento = 0;
+    private boolean debeGuardarCaptura = false;
 
     // OpenCV
     private CascadeClassifier bodyDetector;
@@ -78,13 +80,44 @@ public class InterfazAplicacion extends JFrame {
         estadoLabel = new JLabel("⚫ SISTEMA DETENIDO");
         estadoLabel.setFont(new Font("Arial", Font.BOLD, 18));
         estadoLabel.setForeground(new Color(150, 150, 150));
-        estadoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        estadoLabel.setHorizontalAlignment(SwingConstants.LEFT);
         estadoLabel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Color.GRAY, 2),
                 BorderFactory.createEmptyBorder(10, 20, 10, 20)
         ));
 
-        // Panel de botones
+        // === NUEVOS BOTONES A LA DERECHA DEL ESTADO ===
+        JButton btnAbrirCarpeta = new JButton("📁 Ver capturas");
+        JButton btnSalir = new JButton("❌ Salir");
+
+        btnAbrirCarpeta.setFocusPainted(false);
+        btnSalir.setFocusPainted(false);
+
+        // Abrir carpeta captMov
+        btnAbrirCarpeta.addActionListener(e -> {
+            try {
+                File carpeta = new File("captMov");
+                if (!carpeta.exists()) carpeta.mkdirs();
+                Desktop.getDesktop().open(carpeta);
+            } catch (Exception ex) {
+                System.out.println("⚠ No se pudo abrir la carpeta: " + ex.getMessage());
+            }
+        });
+
+        // Botón salir
+        btnSalir.addActionListener(e -> cerrarAplicacion());
+
+        // Panel combinado de estado + botones
+        JPanel panelEstado = new JPanel(new BorderLayout());
+        panelEstado.add(estadoLabel, BorderLayout.CENTER);
+
+        JPanel panelBotonesEstado = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
+        panelBotonesEstado.add(btnAbrirCarpeta);
+        panelBotonesEstado.add(btnSalir);
+
+        panelEstado.add(panelBotonesEstado, BorderLayout.EAST);
+
+        // === PANEL DE BOTONES PRINCIPALES ===
         JPanel panelBotones = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 5));
 
         iniciarButton = new JButton("▶ Iniciar Vigilancia");
@@ -110,14 +143,14 @@ public class InterfazAplicacion extends JFrame {
         panelBotones.add(detenerButton);
         panelBotones.add(limpiarButton);
 
-        panelSuperior.add(estadoLabel, BorderLayout.NORTH);
+        panelSuperior.add(panelEstado, BorderLayout.NORTH);
         panelSuperior.add(panelBotones, BorderLayout.CENTER);
 
-        // Panel central - Video y registro
+        // Panel central - Video + Tabla
         JPanel panelCentral = new JPanel(new GridLayout(1, 2, 10, 10));
         panelCentral.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
 
-        // Video de la cámara
+        // Panel del video
         JPanel panelVideo = new JPanel(new BorderLayout());
         panelVideo.setBorder(BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(Color.DARK_GRAY, 2),
@@ -138,7 +171,7 @@ public class InterfazAplicacion extends JFrame {
 
         panelVideo.add(videoLabel, BorderLayout.CENTER);
 
-        // Tabla de detecciones
+        // Panel de registro
         JPanel panelRegistro = new JPanel(new BorderLayout());
         panelRegistro.setBorder(BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(Color.DARK_GRAY, 2),
@@ -166,15 +199,16 @@ public class InterfazAplicacion extends JFrame {
         panelCentral.add(panelVideo);
         panelCentral.add(panelRegistro);
 
-        // Añadir todo al frame
+        // Agregar todo al frame
         add(panelSuperior, BorderLayout.NORTH);
         add(panelCentral, BorderLayout.CENTER);
 
-        // Listeners de botones
+        // Listeners
         iniciarButton.addActionListener(e -> iniciarSistema());
         detenerButton.addActionListener(e -> detenerSistema());
         limpiarButton.addActionListener(e -> limpiarRegistro());
     }
+
 
     private void cargarModelo() {
         bodyDetector = new CascadeClassifier("modelos/haarcascade_frontalface_default.xml");
@@ -348,9 +382,15 @@ public class InterfazAplicacion extends JFrame {
                     if (cuerpos.toArray().length > 0) {
                         ultimoMovimiento = System.currentTimeMillis();
 
+                        if (debeGuardarCaptura) {
+                            guardarCaptura(frameActual);  // NUEVA FUNCIÓN
+                            debeGuardarCaptura = false;    // Reseteamos
+                        }
+
                         if (!alarmaReproducida) {
                             playAlertSound();
                             agregarRegistro("⚠ ALERTA", "Movimiento no autorizado detectado");
+
                         }
 
                         // Dibujar rectángulo EN FRAME ORIGINAL
@@ -380,6 +420,7 @@ public class InterfazAplicacion extends JFrame {
                 if (alarmaReproducida && (ahora - ultimoMovimiento > 5000)) {
                     alarmaReproducida = false;
                     System.out.println("⚠ Alarma reseteada tras 5 segundos sin movimiento.");
+                    debeGuardarCaptura=true;
                 }
 
                 // Actualizar frame previo
@@ -516,4 +557,28 @@ public class InterfazAplicacion extends JFrame {
         modeloTabla.setRowCount(0);
         agregarRegistro("Registro limpiado", "Historial borrado");
     }
+
+    private void guardarCaptura(Mat frame) {
+        try {
+            // Crear carpeta si no existe
+            File carpeta = new File("captMov");
+            if (!carpeta.exists()) carpeta.mkdirs();
+
+            // Nombre: captura_2025-12-08_22-14-05.jpg
+            String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+            String filename = "captMov/captura_" + timestamp + ".jpg";
+
+            // Guardar imagen con OpenCV
+            Imgcodecs.imwrite(filename, frame);
+
+            System.out.println("📸 Imagen de movimiento guardada: " + filename);
+
+            // Registrar en tabla
+            agregarRegistro("Captura guardada", filename);
+
+        } catch (Exception e) {
+            System.out.println("⚠ Error guardando la captura: " + e.getMessage());
+        }
+    }
+
 }

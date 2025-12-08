@@ -1,4 +1,3 @@
-import javafx.embed.swing.JFXPanel;
 
 import javax.swing.*;
 
