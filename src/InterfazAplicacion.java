@@ -66,8 +66,7 @@ public class InterfazAplicacion extends JFrame {
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
-                detenerSistema();
-                System.exit(0);
+                cerrarAplicacion();
             }
         });
     }
@@ -87,7 +86,7 @@ public class InterfazAplicacion extends JFrame {
                 BorderFactory.createEmptyBorder(10, 20, 10, 20)
         ));
 
-        // === NUEVOS BOTONES A LA DERECHA DEL ESTADO ===
+
         JButton btnAbrirCarpeta = new JButton("📁 Ver capturas");
         JButton btnSalir = new JButton("❌ Salir");
 
@@ -118,7 +117,7 @@ public class InterfazAplicacion extends JFrame {
 
         panelEstado.add(panelBotonesEstado, BorderLayout.EAST);
 
-        // === PANEL DE BOTONES PRINCIPALES ===
+
         JPanel panelBotones = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 5));
 
         iniciarButton = new JButton("▶ Iniciar Vigilancia");
@@ -212,7 +211,7 @@ public class InterfazAplicacion extends JFrame {
 
 
     private void cargarModelo() {
-        bodyDetector = new CascadeClassifier("modelos/haarcascade_frontalface_default.xml");
+        bodyDetector = new CascadeClassifier("modelos/haarcascade_fullbody.xml");
         if (bodyDetector.empty()) {
             JOptionPane.showMessageDialog(this,
                     "No se pudo cargar el modelo de detección.\nVerifica que el archivo exista en la carpeta 'modelos/'",
@@ -343,49 +342,49 @@ public class InterfazAplicacion extends JFrame {
                 Imgproc.cvtColor(frameActual, gray, Imgproc.COLOR_BGR2GRAY);
                 Imgproc.GaussianBlur(gray, gray, new Size(9, 9), 0);
 
-                // 1️⃣ DIFERENCIA ENTRE FRAMES
+                // Diferencia entre frames
                 diff = new Mat();
                 Core.absdiff(framePrevio, gray, diff);
 
-                // 2️⃣ UMBRAL PARA RESALTAR MOVIMIENTO
+                // Umbral para resaltar movimiento
                 thresh = new Mat();
-                Imgproc.threshold(diff, thresh, 10, 255, Imgproc.THRESH_BINARY);
+                Imgproc.threshold(diff, thresh, 3, 255, Imgproc.THRESH_BINARY);
                 Imgproc.dilate(thresh, thresh, new Mat(), new Point(-1, -1), 2);
 
-                // 3️⃣ OBTENER CONTORNOS DE MOVIMIENTO
+                // Obtener contornos de moviento
                 List<MatOfPoint> contours = new ArrayList<>();
                 Imgproc.findContours(thresh, contours, new Mat(),
                         Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
                 for (MatOfPoint contour : contours) {
                     // Ignorar ruido
-                    if (Imgproc.contourArea(contour) < 150) continue;
+                    if (Imgproc.contourArea(contour) < 60) continue;
 
                     // Rectángulo del área en movimiento
                     Rect movimientoRect = Imgproc.boundingRect(contour);
 
-                    // ⬇️ EXTRAER SOLO ESA ZONA DEL FRAME
+                    // Extrae solo esa zona concreta del frame
                     Mat zonaMovimiento = gray.submat(movimientoRect);
 
-                    // 4️⃣ DETECTAR CUERPOS SOLO EN LA ZONA DE MOVIMIENTO
+                    // Detectar cuerpos solo en la zona de movimiento
                     MatOfRect cuerpos = new MatOfRect();
                     bodyDetector.detectMultiScale(
                             zonaMovimiento,
                             cuerpos,
-                            1.1,
-                            3,
+                            1.03,
+                            1,
                             0,
-                            new Size(40, 40),
+                            new Size(30, 30),
                             new Size()
                     );
 
-                    // 5️⃣ SI HAY CUERPOS → Mostrar el rectángulo DE MOVIMIENTO
+                    // Si hay cuerpos se muestra el recuadro de seguimiento
                     if (cuerpos.toArray().length > 0) {
                         ultimoMovimiento = System.currentTimeMillis();
 
                         if (debeGuardarCaptura) {
-                            guardarCaptura(frameActual);  // NUEVA FUNCIÓN
-                            debeGuardarCaptura = false;    // Reseteamos
+                            guardarCaptura(frameActual);
+                            debeGuardarCaptura = false;
                         }
 
                         if (!alarmaReproducida) {
@@ -394,7 +393,7 @@ public class InterfazAplicacion extends JFrame {
 
                         }
 
-                        // Dibujar rectángulo EN FRAME ORIGINAL
+                        // Dibujar rectángulo en el fram original
                         Imgproc.rectangle(frameActual,
                                 movimientoRect,
                                 new Scalar(0, 0, 255),

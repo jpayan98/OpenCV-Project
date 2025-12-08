@@ -16,39 +16,43 @@ utilizando:
 
     /ProyectoVigilancia
      ├── modelos/
-     │     └── haarcascade_frontalface_default.xml
+     │     └── haarcascade_fullbody.xml
+     ├── captMov/
+     │     ├── .gitkepp
+     │     └── "Capturas guardadas por la aplicación".jpg
      ├── sounds/
      │     ├── alert_sound.wav
      │     └── alert_sound.mp3
      ├── libs/
-     │     └── opencv-460.jar
+     │     └── opencv-4120.jar
      ├── native/
-     │     └── opencv_java460.dll
+     │     └── opencv_java4120.dll
      ├── src/
+     │     ├── Main.java
      │     └── InterfazAplicacion.java
      ├── README.md
 
 # Funcionalidades Principales
 
   -----------------------------------------------------------------------
-  Función                     Descripción
+Función                     Descripción
   --------------------------- -------------------------------------------
-  Captura de video            Utiliza la webcam en tiempo real con
-                              OpenCV.
+Captura de video            Utiliza la webcam en tiempo real con
+OpenCV.
 
-  Detección de movimiento     Diferencia entre frames, aplicación de
-                              umbral y contornos.
+Detección de movimiento     Diferencia entre frames, aplicación de
+umbral y contornos.
 
-  Detección de                Mediante Haar Cascade aplicado sobre la
-  cuerpos/rostros             zona en movimiento.
+Detección de                Mediante Haar Cascade aplicado sobre la
+cuerpos/rostros             zona en movimiento.
 
-  Alarma sonora               Reproduce un sonido si se detecta actividad
-                              no autorizada.
+Alarma sonora               Reproduce un sonido si se detecta actividad
+no autorizada.
 
-  Registro de eventos         Guarda hora, tipo de evento y descripción.
+Registro de eventos         Guarda hora, tipo de evento y descripción.
 
-  Interfaz gráfica            Controles para iniciar, detener y limpiar
-                              registro.
+Interfaz gráfica            Controles para iniciar, detener y limpiar
+registro.
   -----------------------------------------------------------------------
 
 # Instalación y Dependencias
@@ -111,13 +115,13 @@ del contorno dentro del código.
 
 # Pruebas Realizadas
 
-  Prueba                           Resultado
+Prueba                           Resultado
   -------------------------------- -------------------------------
-  Movimiento rápido                Detectado correctamente
-  Movimiento lento                 Detectado correctamente
-  Sin movimiento                   Sistema estable
-  Falta del archivo Haar Cascade   Error controlado
-  Alarma repetida                  Suena una vez cada 5 segundos
+Movimiento rápido                Detectado correctamente
+Movimiento lento                 Detectado correctamente
+Sin movimiento                   Sistema estable
+Falta del archivo Haar Cascade   Error controlado
+Alarma repetida                  Suena una vez cada 5 segundos
 
 # Mejoras Futuras
 
