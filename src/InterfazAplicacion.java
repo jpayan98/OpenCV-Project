@@ -64,7 +64,7 @@ public class InterfazAplicacion extends JFrame {
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
-                detenerSistema();
+                cerrarAplicacion();
             }
         });
     }
@@ -215,33 +215,65 @@ public class InterfazAplicacion extends JFrame {
     }
 
     private void detenerSistema() {
-        if (!sistemaActivo) return;
+        System.out.println("Deteniendo sistema...");
 
+        // Marcar como inactivo primero
         sistemaActivo = false;
 
-        // Esperar a que termine el thread
-        if (capturaThread != null) {
+        // Esperar a que termine el thread con timeout
+        if (capturaThread != null && capturaThread.isAlive()) {
             try {
-                capturaThread.join(2000);
+                System.out.println("Esperando a que finalice el thread de captura...");
+                capturaThread.interrupt(); // Interrumpir el thread por si está en sleep
+                capturaThread.join(3000); // Esperar máximo 3 segundos
+
+                if (capturaThread.isAlive()) {
+                    System.out.println("⚠ El thread no finalizó a tiempo, forzando detención...");
+                    capturaThread.interrupt();
+                    capturaThread.join(2000);
+                }
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                System.out.println("Interrupción al esperar thread: " + e.getMessage());
+                Thread.currentThread().interrupt();
             }
+        }
+
+        // Liberar Mats de OpenCV
+        if (framePrevio != null && !framePrevio.empty()) {
+            System.out.println("Liberando framePrevio...");
+            framePrevio.release();
+            framePrevio = null;
         }
 
         // Liberar cámara
         if (camera != null && camera.isOpened()) {
+            System.out.println("Liberando cámara...");
             camera.release();
+            camera = null;
         }
 
         // Actualizar interfaz
-        estadoLabel.setText("⚫ SISTEMA DETENIDO");
-        estadoLabel.setForeground(new Color(150, 150, 150));
-        iniciarButton.setEnabled(true);
-        detenerButton.setEnabled(false);
-        videoLabel.setIcon(null);
-        videoLabel.setText("Cámara desactivada");
+        SwingUtilities.invokeLater(() -> {
+            estadoLabel.setText("⚫ SISTEMA DETENIDO");
+            estadoLabel.setForeground(new Color(150, 150, 150));
+            iniciarButton.setEnabled(true);
+            detenerButton.setEnabled(false);
+            videoLabel.setIcon(null);
+            videoLabel.setText("Cámara desactivada");
+            if (modeloTabla.getRowCount() == 0 ||
+                    !modeloTabla.getValueAt(0, 1).equals("Sistema detenido")) {
+                agregarRegistro("Sistema detenido", "Vigilancia desactivada");
+            }
+        });
 
-        agregarRegistro("Sistema detenido", "Vigilancia desactivada");
+        System.out.println("✓ Sistema detenido correctamente");
+    }
+
+    private void cerrarAplicacion() {
+        System.out.println("Cerrando aplicación...");
+        detenerSistema();
+        System.out.println("Finalizando proceso...");
+        System.exit(0);
     }
 
     private void capturarMovimiento() {
@@ -252,100 +284,128 @@ public class InterfazAplicacion extends JFrame {
 
         framePrevio = new Mat();
         Mat frameActual = new Mat();
+        Mat gray = null;
+        Mat diff = null;
+        Mat thresh = null;
 
-        // Primer frame
-        camera.read(framePrevio);
-        Imgproc.cvtColor(framePrevio, framePrevio, Imgproc.COLOR_BGR2GRAY);
-        Imgproc.GaussianBlur(framePrevio, framePrevio, new Size(21, 21), 0);
+        try {
+            // Primer frame
+            if (!camera.read(framePrevio)) {
+                System.out.println("No se pudo leer el primer frame");
+                return;
+            }
+            Imgproc.cvtColor(framePrevio, framePrevio, Imgproc.COLOR_BGR2GRAY);
+            Imgproc.GaussianBlur(framePrevio, framePrevio, new Size(21, 21), 0);
 
-        while (sistemaActivo) {
-            if (!camera.read(frameActual)) break;
+            while (sistemaActivo && !Thread.currentThread().isInterrupted()) {
+                if (!camera.read(frameActual)) {
+                    System.out.println("No se pudo leer frame de la cámara");
+                    break;
+                }
 
-            // Convertir a gris + suavizar
-            Mat gray = new Mat();
-            Imgproc.cvtColor(frameActual, gray, Imgproc.COLOR_BGR2GRAY);
-            Imgproc.GaussianBlur(gray, gray, new Size(9, 9), 0);
+                // Convertir a gris + suavizar
+                gray = new Mat();
+                Imgproc.cvtColor(frameActual, gray, Imgproc.COLOR_BGR2GRAY);
+                Imgproc.GaussianBlur(gray, gray, new Size(9, 9), 0);
 
-            // 1️⃣ DIFERENCIA ENTRE FRAMES
-            Mat diff = new Mat();
-            Core.absdiff(framePrevio, gray, diff);
+                // 1️⃣ DIFERENCIA ENTRE FRAMES
+                diff = new Mat();
+                Core.absdiff(framePrevio, gray, diff);
 
-            // 2️⃣ UMBRAL PARA RESALTAR MOVIMIENTO
-            Mat thresh = new Mat();
-            Imgproc.threshold(diff, thresh, 10, 255, Imgproc.THRESH_BINARY);
-            Imgproc.dilate(thresh, thresh, new Mat(), new Point(-1, -1), 2);
+                // 2️⃣ UMBRAL PARA RESALTAR MOVIMIENTO
+                thresh = new Mat();
+                Imgproc.threshold(diff, thresh, 10, 255, Imgproc.THRESH_BINARY);
+                Imgproc.dilate(thresh, thresh, new Mat(), new Point(-1, -1), 2);
 
-            // 3️⃣ OBTENER CONTORNOS DE MOVIMIENTO
-            List<MatOfPoint> contours = new ArrayList<>();
-            Imgproc.findContours(thresh, contours, new Mat(),
-                    Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                // 3️⃣ OBTENER CONTORNOS DE MOVIMIENTO
+                List<MatOfPoint> contours = new ArrayList<>();
+                Imgproc.findContours(thresh, contours, new Mat(),
+                        Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
-            for (MatOfPoint contour : contours) {
-                // Ignorar ruido
-                if (Imgproc.contourArea(contour) < 150) continue;
+                for (MatOfPoint contour : contours) {
+                    // Ignorar ruido
+                    if (Imgproc.contourArea(contour) < 150) continue;
 
-                // Rectángulo del área en movimiento
-                Rect movimientoRect = Imgproc.boundingRect(contour);
+                    // Rectángulo del área en movimiento
+                    Rect movimientoRect = Imgproc.boundingRect(contour);
 
-                // ⬇️ EXTRAER SOLO ESA ZONA DEL FRAME
-                Mat zonaMovimiento = gray.submat(movimientoRect);
+                    // ⬇️ EXTRAER SOLO ESA ZONA DEL FRAME
+                    Mat zonaMovimiento = gray.submat(movimientoRect);
 
-                // 4️⃣ DETECTAR CUERPOS SOLO EN LA ZONA DE MOVIMIENTO
-                MatOfRect cuerpos = new MatOfRect();
-                bodyDetector.detectMultiScale(
-                        zonaMovimiento,
-                        cuerpos,
-                        1.1,
-                        3,
-                        0,
-                        new Size(40, 40),
-                        new Size()
-                );
+                    // 4️⃣ DETECTAR CUERPOS SOLO EN LA ZONA DE MOVIMIENTO
+                    MatOfRect cuerpos = new MatOfRect();
+                    bodyDetector.detectMultiScale(
+                            zonaMovimiento,
+                            cuerpos,
+                            1.1,
+                            3,
+                            0,
+                            new Size(40, 40),
+                            new Size()
+                    );
 
-                // 5️⃣ SI HAY CUERPOS → Mostrar el rectángulo DE MOVIMIENTO
-                if (cuerpos.toArray().length > 0) {
-                    ultimoMovimiento = System.currentTimeMillis();
+                    // 5️⃣ SI HAY CUERPOS → Mostrar el rectángulo DE MOVIMIENTO
+                    if (cuerpos.toArray().length > 0) {
+                        ultimoMovimiento = System.currentTimeMillis();
 
-                    if (!alarmaReproducida) {
-                        playAlertSound();
-                        agregarRegistro("⚠ ALERTA", "Movimiento no autorizado detectado");
+                        if (!alarmaReproducida) {
+                            playAlertSound();
+                            agregarRegistro("⚠ ALERTA", "Movimiento no autorizado detectado");
+                        }
+
+                        // Dibujar rectángulo EN FRAME ORIGINAL
+                        Imgproc.rectangle(frameActual,
+                                movimientoRect,
+                                new Scalar(0, 0, 255),
+                                8
+                        );
+
+                        Imgproc.putText(frameActual, "Movimiento no autorizado detectado",
+                                new Point(movimientoRect.x, movimientoRect.y - 10),
+                                Imgproc.FONT_HERSHEY_SIMPLEX,
+                                0.6,
+                                new Scalar(0, 0, 255),
+                                2
+                        );
                     }
+                }
 
-                    // Dibujar rectángulo EN FRAME ORIGINAL
-                    Imgproc.rectangle(frameActual,
-                            movimientoRect,
-                            new Scalar(0, 0, 255),
-                            8
-                    );
+                // Mostrar frame en la interfaz
+                if (sistemaActivo) {
+                    mostrarFrame(frameActual);
+                }
 
-                    Imgproc.putText(frameActual, "Movimiento no autorizado detectado",
-                            new Point(movimientoRect.x, movimientoRect.y - 10),
-                            Imgproc.FONT_HERSHEY_SIMPLEX,
-                            0.6,
-                            new Scalar(0, 0, 255),
-                            2
-                    );
+                // Reset de alarma
+                long ahora = System.currentTimeMillis();
+                if (alarmaReproducida && (ahora - ultimoMovimiento > 5000)) {
+                    alarmaReproducida = false;
+                    System.out.println("⚠ Alarma reseteada tras 5 segundos sin movimiento.");
+                }
+
+                // Actualizar frame previo
+                gray.copyTo(framePrevio);
+
+                // Liberar Mats temporales
+                if (diff != null) diff.release();
+                if (thresh != null) thresh.release();
+
+                try {
+                    Thread.sleep(30); // ~33 FPS
+                } catch (InterruptedException e) {
+                    System.out.println("Thread de captura interrumpido durante sleep");
+                    break;
                 }
             }
-
-            // Mostrar frame en la interfaz
-            mostrarFrame(frameActual);
-
-            // Reset de alarma
-            long ahora = System.currentTimeMillis();
-            if (alarmaReproducida && (ahora - ultimoMovimiento > 5000)) {
-                alarmaReproducida = false;
-                System.out.println("⚠ Alarma reseteada tras 5 segundos sin movimiento.");
-            }
-
-            // Actualizar frame previo
-            gray.copyTo(framePrevio);
-
-            try {
-                Thread.sleep(30); // ~33 FPS
-            } catch (InterruptedException e) {
-                break;
-            }
+        } catch (Exception e) {
+            System.out.println("Error en captura: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            // Limpiar todos los recursos de OpenCV
+            System.out.println("Thread de captura finalizado - limpiando recursos Mat");
+            if (frameActual != null && !frameActual.empty()) frameActual.release();
+            if (gray != null && !gray.empty()) gray.release();
+            if (diff != null && !diff.empty()) diff.release();
+            if (thresh != null && !thresh.empty()) thresh.release();
         }
     }
 
