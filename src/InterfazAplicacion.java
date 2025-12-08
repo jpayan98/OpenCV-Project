@@ -1,4 +1,5 @@
 import org.opencv.core.*;
+import org.opencv.core.Point;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.videoio.VideoCapture;
@@ -6,6 +7,7 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferByte;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -62,7 +64,7 @@ public class InterfazAplicacion extends JFrame {
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
-                //detenerSistema();
+                detenerSistema();
             }
         });
     }
@@ -169,9 +171,9 @@ public class InterfazAplicacion extends JFrame {
         add(panelCentral, BorderLayout.CENTER);
 
         // Listeners de botones
-        //iniciarButton.addActionListener(e -> iniciarSistema());
-        //detenerButton.addActionListener(e -> detenerSistema());
-        //limpiarButton.addActionListener(e -> limpiarRegistro());
+        iniciarButton.addActionListener(e -> iniciarSistema());
+        detenerButton.addActionListener(e -> detenerSistema());
+        limpiarButton.addActionListener(e -> limpiarRegistro());
     }
 
     private void cargarModelo() {
@@ -182,5 +184,276 @@ public class InterfazAplicacion extends JFrame {
                     "Error",
                     JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void iniciarSistema() {
+        if (sistemaActivo) return;
+
+        camera = new VideoCapture(0);
+        if (!camera.isOpened()) {
+            JOptionPane.showMessageDialog(this,
+                    "No se pudo abrir la webcam",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        sistemaActivo = true;
+        alarmaReproducida = false;
+
+        // Actualizar interfaz
+        estadoLabel.setText("🔴 SISTEMA ACTIVO - VIGILANDO");
+        estadoLabel.setForeground(new Color(231, 76, 60));
+        iniciarButton.setEnabled(false);
+        detenerButton.setEnabled(true);
+
+        agregarRegistro("Sistema iniciado", "Vigilancia activa");
+
+        // Iniciar thread de captura
+        capturaThread = new Thread(this::capturarMovimiento);
+        capturaThread.start();
+    }
+
+    private void detenerSistema() {
+        if (!sistemaActivo) return;
+
+        sistemaActivo = false;
+
+        // Esperar a que termine el thread
+        if (capturaThread != null) {
+            try {
+                capturaThread.join(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        // Liberar cámara
+        if (camera != null && camera.isOpened()) {
+            camera.release();
+        }
+
+        // Actualizar interfaz
+        estadoLabel.setText("⚫ SISTEMA DETENIDO");
+        estadoLabel.setForeground(new Color(150, 150, 150));
+        iniciarButton.setEnabled(true);
+        detenerButton.setEnabled(false);
+        videoLabel.setIcon(null);
+        videoLabel.setText("Cámara desactivada");
+
+        agregarRegistro("Sistema detenido", "Vigilancia desactivada");
+    }
+
+    private void capturarMovimiento() {
+        if (bodyDetector.empty()) {
+            System.out.println("No se pudo cargar el clasificador de cuerpos.");
+            return;
+        }
+
+        framePrevio = new Mat();
+        Mat frameActual = new Mat();
+
+        // Primer frame
+        camera.read(framePrevio);
+        Imgproc.cvtColor(framePrevio, framePrevio, Imgproc.COLOR_BGR2GRAY);
+        Imgproc.GaussianBlur(framePrevio, framePrevio, new Size(21, 21), 0);
+
+        while (sistemaActivo) {
+            if (!camera.read(frameActual)) break;
+
+            // Convertir a gris + suavizar
+            Mat gray = new Mat();
+            Imgproc.cvtColor(frameActual, gray, Imgproc.COLOR_BGR2GRAY);
+            Imgproc.GaussianBlur(gray, gray, new Size(9, 9), 0);
+
+            // 1️⃣ DIFERENCIA ENTRE FRAMES
+            Mat diff = new Mat();
+            Core.absdiff(framePrevio, gray, diff);
+
+            // 2️⃣ UMBRAL PARA RESALTAR MOVIMIENTO
+            Mat thresh = new Mat();
+            Imgproc.threshold(diff, thresh, 10, 255, Imgproc.THRESH_BINARY);
+            Imgproc.dilate(thresh, thresh, new Mat(), new Point(-1, -1), 2);
+
+            // 3️⃣ OBTENER CONTORNOS DE MOVIMIENTO
+            List<MatOfPoint> contours = new ArrayList<>();
+            Imgproc.findContours(thresh, contours, new Mat(),
+                    Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+
+            for (MatOfPoint contour : contours) {
+                // Ignorar ruido
+                if (Imgproc.contourArea(contour) < 150) continue;
+
+                // Rectángulo del área en movimiento
+                Rect movimientoRect = Imgproc.boundingRect(contour);
+
+                // ⬇️ EXTRAER SOLO ESA ZONA DEL FRAME
+                Mat zonaMovimiento = gray.submat(movimientoRect);
+
+                // 4️⃣ DETECTAR CUERPOS SOLO EN LA ZONA DE MOVIMIENTO
+                MatOfRect cuerpos = new MatOfRect();
+                bodyDetector.detectMultiScale(
+                        zonaMovimiento,
+                        cuerpos,
+                        1.1,
+                        3,
+                        0,
+                        new Size(40, 40),
+                        new Size()
+                );
+
+                // 5️⃣ SI HAY CUERPOS → Mostrar el rectángulo DE MOVIMIENTO
+                if (cuerpos.toArray().length > 0) {
+                    ultimoMovimiento = System.currentTimeMillis();
+
+                    if (!alarmaReproducida) {
+                        playAlertSound();
+                        agregarRegistro("⚠ ALERTA", "Movimiento no autorizado detectado");
+                    }
+
+                    // Dibujar rectángulo EN FRAME ORIGINAL
+                    Imgproc.rectangle(frameActual,
+                            movimientoRect,
+                            new Scalar(0, 0, 255),
+                            8
+                    );
+
+                    Imgproc.putText(frameActual, "Movimiento no autorizado detectado",
+                            new Point(movimientoRect.x, movimientoRect.y - 10),
+                            Imgproc.FONT_HERSHEY_SIMPLEX,
+                            0.6,
+                            new Scalar(0, 0, 255),
+                            2
+                    );
+                }
+            }
+
+            // Mostrar frame en la interfaz
+            mostrarFrame(frameActual);
+
+            // Reset de alarma
+            long ahora = System.currentTimeMillis();
+            if (alarmaReproducida && (ahora - ultimoMovimiento > 5000)) {
+                alarmaReproducida = false;
+                System.out.println("⚠ Alarma reseteada tras 5 segundos sin movimiento.");
+            }
+
+            // Actualizar frame previo
+            gray.copyTo(framePrevio);
+
+            try {
+                Thread.sleep(30); // ~33 FPS
+            } catch (InterruptedException e) {
+                break;
+            }
+        }
+    }
+
+    private void mostrarFrame(Mat frame) {
+        if (frame.empty()) return;
+
+        BufferedImage imagen = matToBufferedImage(frame);
+
+        // Escalar imagen para que se ajuste al label
+        int anchoLabel = videoLabel.getWidth();
+        int altoLabel = videoLabel.getHeight();
+
+        if (anchoLabel > 0 && altoLabel > 0) {
+            Image imagenEscalada = imagen.getScaledInstance(anchoLabel, altoLabel, Image.SCALE_FAST);
+            ImageIcon icon = new ImageIcon(imagenEscalada);
+
+            SwingUtilities.invokeLater(() -> {
+                videoLabel.setText("");
+                videoLabel.setIcon(icon);
+            });
+        }
+    }
+
+    private BufferedImage matToBufferedImage(Mat mat) {
+        int type = BufferedImage.TYPE_BYTE_GRAY;
+        if (mat.channels() > 1) {
+            type = BufferedImage.TYPE_3BYTE_BGR;
+        }
+
+        int bufferSize = mat.channels() * mat.cols() * mat.rows();
+        byte[] buffer = new byte[bufferSize];
+        mat.get(0, 0, buffer);
+
+        BufferedImage image = new BufferedImage(mat.cols(), mat.rows(), type);
+        final byte[] targetPixels = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();
+        System.arraycopy(buffer, 0, targetPixels, 0, buffer.length);
+
+        return image;
+    }
+
+    private void playAlertSound() {
+        if (alarmaReproducida) return;
+
+        new Thread(() -> {
+            try {
+                // Intentar primero con .wav
+                String pathWav = "sounds/alert_sound.wav";
+                File audioFile = new File(pathWav);
+
+                // Si no existe .wav, intentar con .mp3
+                if (!audioFile.exists()) {
+                    String pathMp3 = "sounds/alert_sound.mp3";
+                    audioFile = new File(pathMp3);
+                }
+
+                if (!audioFile.exists()) {
+                    System.out.println("⚠ Archivo de audio no encontrado en: " + audioFile.getAbsolutePath());
+                    System.out.println("⚠ Asegúrate de tener 'sounds/alert_sound.wav' o 'sounds/alert_sound.mp3'");
+                    alarmaReproducida = true;
+                    return;
+                }
+
+                // Cargar y reproducir el audio
+                AudioInputStream audioStream = AudioSystem.getAudioInputStream(audioFile);
+                Clip clip = AudioSystem.getClip();
+                clip.open(audioStream);
+
+                System.out.println("✓ Reproduciendo alarma: " + audioFile.getName());
+                clip.start();
+
+                // Esperar a que termine de reproducirse
+                clip.addLineListener(event -> {
+                    if (event.getType() == LineEvent.Type.STOP) {
+                        clip.close();
+                    }
+                });
+
+            } catch (UnsupportedAudioFileException e) {
+                System.out.println("⚠ Formato de audio no soportado. Usa archivos .wav");
+                System.out.println("   Para MP3, necesitas convertirlo a WAV primero.");
+            } catch (IOException e) {
+                System.out.println("⚠ Error al leer el archivo de audio: " + e.getMessage());
+            } catch (LineUnavailableException e) {
+                System.out.println("⚠ Sistema de audio no disponible: " + e.getMessage());
+            } catch (Exception e) {
+                System.out.println("⚠ Error inesperado al reproducir audio: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }).start();
+
+        alarmaReproducida = true;
+    }
+
+    private void agregarRegistro(String evento, String descripcion) {
+        SwingUtilities.invokeLater(() -> {
+            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss");
+            String hora = sdf.format(new Date());
+            modeloTabla.insertRow(0, new Object[]{hora, evento, descripcion});
+
+            // Limitar a 100 registros
+            if (modeloTabla.getRowCount() > 100) {
+                modeloTabla.removeRow(100);
+            }
+        });
+    }
+
+    private void limpiarRegistro() {
+        modeloTabla.setRowCount(0);
+        agregarRegistro("Registro limpiado", "Historial borrado");
     }
 }
