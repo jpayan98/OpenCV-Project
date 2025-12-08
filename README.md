@@ -65,8 +65,8 @@ utilizando:
 1.  Descargar OpenCV desde https://opencv.org/releases/\
 2.  Descomprimir en `C:\opencv\`\
 3.  Copiar a tu proyecto:
-    -   `opencv/build/java/opencv-460.jar` → carpeta `libs/`
-    -   `opencv/build/java/x64/opencv_java460.dll` → carpeta `native/`
+    -   `opencv/build/java/opencv-4120.jar` → carpeta `libs/`
+    -   `opencv/build/java/x64/opencv_java4120.dll` → carpeta `native/`
 4.  El proyecto carga automáticamente OpenCV mediante:
 
 ``` java
@@ -77,11 +77,11 @@ System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
 
 ## Compilar desde terminal
 
-    javac -cp .;libs/opencv-460.jar src/InterfazAplicacion.java
+    javac -cp .;libs/opencv-4120.jar src/InterfazAplicacion.java
 
 ## Ejecutar
 
-    java -cp .;libs/opencv-460.jar -Djava.library.path=native InterfazAplicacion
+    java -cp .;libs/opencv-4120.jar -Djava.library.path=native InterfazAplicacion
 
 # Manual de Usuario
 
